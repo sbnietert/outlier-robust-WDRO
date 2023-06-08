@@ -52,7 +52,7 @@ for t = 1:T
         disp(m)
         % using standard WDRO on corrupted data
         disp("standard DRO excess risk")
-        [theta_star, obj_star] = regular_WDRO_classification_v2(X_tilde(1:m,:), y_tilde(1:m), rho, dual_norm, verbose);
+        [theta_star, obj_star] = regular_WDRO_classification(X_tilde(1:m,:), y_tilde(1:m), rho, dual_norm, verbose);
         standard_excess_risk = mean(max(0,1 - y.*(X*theta_star))) - best_risk;
         disp(standard_excess_risk)
         standard_excess_risks(t,i) = standard_excess_risk;
@@ -60,7 +60,7 @@ for t = 1:T
         % using outlier-robust WDRO
         disp("outlier-robust DRO excess risk (eps = 0)")
         x_0 = cheap_robust_mean_estimate(X_tilde, 2*eps);
-        [theta_star, obj_star2] = outlier_robust_WDRO_classification_v2(X_tilde(1:m,:), y_tilde(1:m), sigma, rho, 0, x_0', dual_norm, verbose);
+        [theta_star, obj_star2] = outlier_robust_WDRO_classification(X_tilde(1:m,:), y_tilde(1:m), sigma, rho, 0, x_0', dual_norm, verbose);
         outlier_robust_excess_risk = mean(max(0,1 - y.*(X*theta_star))) - best_risk;
         disp(outlier_robust_excess_risk)
         outlier_robust_0_excess_risks(t,i) = outlier_robust_excess_risk;
