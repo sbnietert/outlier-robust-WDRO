@@ -13,6 +13,7 @@ function [theta_star, obj_star] = outlier_robust_WDRO_k_dim(X, Y, sigma, rho, va
     % Define variables
     lambda_1 = sdpvar(1);
     lambda_2 = sdpvar(1);
+    alpha = sdpvar(1);
     s = sdpvar(n, 1);
     zeta_G = sdpvar(d, n, J);
     zeta_W = sdpvar(d, n, J);
@@ -20,7 +21,7 @@ function [theta_star, obj_star] = outlier_robust_WDRO_k_dim(X, Y, sigma, rho, va
     theta = sdpvar(d_x, d_y, 'full');
     
     % Define objective function
-    objective = lambda_1 * sigma^q + lambda_2 * rho^p + 1 / (n * (1 - vareps)) * sum(s);
+    objective = lambda_1 * sigma^q + lambda_2 * rho^p + 1 / (n * (1 - vareps)) * sum(s) + alpha;
     
     % Define constraints
     constraints = cell(n*J+1, 1);
@@ -33,9 +34,9 @@ function [theta_star, obj_star] = outlier_robust_WDRO_k_dim(X, Y, sigma, rho, va
             coeff = ones(d_y, 1);
             coeff(str == '1') = -1;
             counter = counter + 1;
-            constraints{counter} = [s(i) >= z_0' * zeta_G(:, i, piece) + tau(:, i, piece) + Z(i,:) * zeta_W(:,i, piece);
+            constraints{counter} = [s(i) >= z_0' * zeta_G(:, i, piece) + tau(:, i, piece) + Z(i,:) * zeta_W(:,i, piece) - alpha;
                                     [theta * coeff; -coeff] + zeta_G(:, i, piece) + zeta_W(:, i, piece) == 0;
-                                    rcone(zeta_G(:, i, piece), lambda_1, tau(:, i, piece));
+                                    rcone(zeta_G(:, i, piece), lambda_1, 0.5 * tau(:, i, piece));
                                     norm(zeta_W(:, i, piece), dual_norm) <= lambda_2];
         end
     end

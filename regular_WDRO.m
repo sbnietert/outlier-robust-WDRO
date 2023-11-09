@@ -1,4 +1,4 @@
-function [theta_star, obj_star] = regular_WDRO_exp1(X, y, rho, dual_norm, verbose)
+function [theta_star, obj_star] = regular_WDRO(X, y, rho, dual_norm, verbose)
 % This implementation is for p = 1, and Z = R^d
 
     % Define parameters
@@ -21,7 +21,7 @@ function [theta_star, obj_star] = regular_WDRO_exp1(X, y, rho, dual_norm, verbos
     end
     
     % Optimize model
-    ops = sdpsettings('solver', 'sedumi', 'verbose', verbose);
+    ops = sdpsettings('solver', 'gurobi', 'verbose', verbose);
     optimize([constraints{:}], objective, ops);
     
     % Return the solution

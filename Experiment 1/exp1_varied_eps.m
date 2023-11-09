@@ -1,0 +1,160 @@
+%% setup
+
+clc
+clearvars
+addpath(genpath(".."))
+%addpath(genpath("/Users/???/MATLAB/YALMIP-master"))
+%addpath(genpath("/Users/???/MATLAB/sedumi-master"))
+%addpath(genpath("/Library/gurobi1001/macos_universal2/matlab/"))
+
+d = 10; % dimension
+sample_sizes = [10, 20, 50, 75, 100];
+T = 20; % iterations
+rho = 0.1; % Wp perturbation size (here, will be a translation)
+eps = 0.1; % TV perturbation size
+sigma = sqrt(d); % moment bound (sqrt(d) * covariance)
+contamination_scale_factor = 8;
+
+% model for clean data:
+%   X ~ N(0,I_d)
+%   Y = X^T \theta_0
+% model for contaminated data:
+%   w/ prob 1-eps
+%   \tilde{X} = X, \tilde{Y} = Y + \rho
+%   w/ prob eps
+%   \tilde{X} = contamination_scale_factor * X
+%   \tilde{Y} = - contamination_scale_factor^2 * Y
+% note: this setup is rather arbitrary but ensures that excess risk of
+% standard WDRO goes to infinity for large contamination_scale_factor
+
+dual_norm = 2; % \ell_2 norm
+verbose = 0; % set to 1 to see the solver's progress
+
+%% compute excess risks
+
+standard_excess_risks = zeros(T,length(sample_sizes));
+outlier_robust_0_excess_risks = zeros(T,length(sample_sizes));
+outlier_robust_1_excess_risks = zeros(T,length(sample_sizes));
+outlier_robust_2_excess_risks = zeros(T,length(sample_sizes));
+
+for t = 1:T
+    disp("iteration:")
+    disp(t)
+
+    for i = 1:length(sample_sizes)
+        n = sample_sizes(i);
+        disp("sample size")
+        disp(n)
+
+        X = randn(n,d); % true features, each row is one sample
+        theta_star = randn(d,1); % coefficients for linear hypothesis
+        theta_star = theta_star./sqrt(theta_star'*theta_star); % normalize to unit vector
+        y = X * theta_star;
+
+        % test risk of true coefficients
+        best_risk = mean(abs(X * theta_star - y)); % = 0 for current setup
+
+        X_tilde = X;
+        y_tilde = y;
+        % TV perturbation
+        X_tilde(1:floor(eps*n),:) = contamination_scale_factor * X(1:floor(eps*n),:);
+        y_tilde(1:floor(eps*n)) = -contamination_scale_factor^2 * y(1:floor(eps*n));
+        % Wp perturbation
+        y_tilde = y_tilde + rho;
+
+        % shuffle (shouldn't matter)
+        reordering = randperm(n);
+        X_tilde = X_tilde(reordering,:);
+        y_tilde = y_tilde(reordering);
+
+        % using standard WDRO on corrupted data
+        disp("standard DRO excess risk")
+        [theta_hat, ~] = regular_WDRO(X_tilde, y_tilde, rho, dual_norm, verbose);
+        standard_excess_risks(t,i) = mean(abs(X * theta_hat - y)) - best_risk;
+        disp(standard_excess_risks(t,i))
+
+        % get cheap robust mean estimate
+        z_0 = cheap_robust_mean_estimate(X_tilde, 2*eps);
+        z_0(end+1) = cheap_robust_mean_estimate(y_tilde, 2*eps);
+        z_0 = z_0';
+        
+        % using outlier-robust WDRO, eps = 0
+        disp("outlier-robust DRO excess risk (eps = 0)");
+        [theta_hat_0, ~] = outlier_robust_WDRO(X_tilde, y_tilde, sigma, rho, 0, z_0, dual_norm, verbose);
+        outlier_robust_0_excess_risks(t,i) = mean(abs(X * theta_hat_0 - y)) - best_risk;
+        disp(outlier_robust_0_excess_risks(t,i))
+
+        % using outlier-robust WDRO, eps
+        disp("outlier-robust DRO excess risk (eps)")
+        [theta_star_1, ~] = outlier_robust_WDRO(X_tilde, y_tilde, sigma, rho, eps, z_0, dual_norm, verbose);
+        outlier_robust_1_excess_risks(t,i) = mean(abs(X * theta_star_1 - y)) - best_risk;
+        disp(outlier_robust_1_excess_risks(t,i))
+
+        % using outlier-robust WDRO, 2eps
+        disp("outlier-robust DRO excess risk (2eps)")
+        [theta_hat_2, ~] = outlier_robust_WDRO(X_tilde, y_tilde, sigma, rho, 2*eps, z_0, dual_norm, verbose);
+        outlier_robust_2_excess_risks(t,i) = mean(abs(X * theta_hat_2 - y)) - best_risk;
+        disp(outlier_robust_2_excess_risks(t,i))
+    end
+end
+
+%% save data
+
+save(strcat("exp1_",datestr(now)),"standard_excess_risks", "outlier_robust_0_excess_risks", "outlier_robust_1_excess_risks", "outlier_robust_2_excess_risks")
+
+%% bootstrapping
+
+K = 100; % number of bootstrap resamples
+standard_averages = mean(standard_excess_risks,1);
+outlier_robust_0_averages = mean(outlier_robust_0_excess_risks,1);
+outlier_robust_1_averages = mean(outlier_robust_1_excess_risks,1);
+outlier_robust_2_averages = mean(outlier_robust_2_excess_risks,1);
+
+standard_bootstraps = zeros(K, length(sample_sizes));
+outlier_robust_0_bootstraps = zeros(K, length(sample_sizes));
+outlier_robust_1_bootstraps = zeros(K, length(sample_sizes));
+outlier_robust_2_bootstraps = zeros(K, length(sample_sizes));
+for k = 1:K
+    for i = 1:length(sample_sizes)
+        n = sample_sizes(i);
+        standard_bootstraps(k,i) = mean(randsample(standard_excess_risks(:,i),T,true));
+        outlier_robust_0_bootstraps(k,i) = mean(randsample(outlier_robust_0_excess_risks(:,i),T,true));
+        outlier_robust_1_bootstraps(k,i) = mean(randsample(outlier_robust_1_excess_risks(:,i),T,true));
+        outlier_robust_2_bootstraps(k,i) = mean(randsample(outlier_robust_2_excess_risks(:,i),T,true));
+    end
+end
+standard_bootstraps = sort(standard_bootstraps,1);
+outlier_robust_0_bootstraps = sort(outlier_robust_0_bootstraps,1);
+outlier_robust_1_bootstraps = sort(outlier_robust_1_bootstraps,1);
+outlier_robust_2_bootstraps = sort(outlier_robust_2_bootstraps,1);
+standard_p10 = standard_bootstraps(round(K*.1),:);
+standard_p90 = standard_bootstraps(round(K*.9),:);
+outlier_robust_0_p10 = outlier_robust_0_bootstraps(round(K*.1),:);
+outlier_robust_0_p90 = outlier_robust_0_bootstraps(round(K*.9),:);
+outlier_robust_1_p10 = outlier_robust_1_bootstraps(round(K*.1),:);
+outlier_robust_1_p90 = outlier_robust_1_bootstraps(round(K*.9),:);
+outlier_robust_2_p10 = outlier_robust_2_bootstraps(round(K*.1),:);
+outlier_robust_2_p90 = outlier_robust_2_bootstraps(round(K*.9),:);
+
+%% plots
+
+hold on
+errorbar(sample_sizes, standard_averages, standard_averages - standard_p10, standard_p90 - standard_averages);
+errorbar(sample_sizes, outlier_robust_0_averages, outlier_robust_0_averages - outlier_robust_0_p10, outlier_robust_0_p90 - outlier_robust_0_averages);
+errorbar(sample_sizes, outlier_robust_1_averages, outlier_robust_1_averages - outlier_robust_1_p10, outlier_robust_1_p90 - outlier_robust_1_averages);
+errorbar(sample_sizes, outlier_robust_2_averages, outlier_robust_2_averages - outlier_robust_2_p10, outlier_robust_2_p90 - outlier_robust_2_averages);
+
+title("\rm Excess Risk for Varied Sample Size and Method")
+ax = gca;
+ax.TitleFontSizeMultiplier = 1.5;
+xl = xlabel("# samples");
+fontsize(xl,'increase')
+fontsize(xl,'increase')
+xlim([10,100])
+yl = ylabel("excess risk (mean absolute deviation)");
+fontsize(yl,'increase')
+fontsize(yl,'increase')
+leg = legend("standard WDRO","OR-WDRO w/ ε̂ = 0", "OR-WDRO w/ ε̂ = ε", "OR-WDRO w/ ε̂ = 2ε");
+fontsize(leg,'increase')
+fontsize(leg,'increase')
+hold off
